@@ -36,7 +36,7 @@ class TinyTrek(TinyBasic):
         self._cursor_y = self._screen_size_y - self._font_size_y
 
         # Pyxel の初期化
-        pyxel.init(self._screen_size_x, self._screen_size_y, caption = 'Tiny Trek')
+        pyxel.init(self._screen_size_x, self._screen_size_y, caption = 'Tiny Trek', scale = 2)
         pyxel.cls(self._color_back)
 
     # 文字列を出力する
