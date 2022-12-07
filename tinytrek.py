@@ -35,9 +35,65 @@ class TinyTrek(TinyBasic):
         self._cursor_x = 0
         self._cursor_y = self._screen_size_y - self._font_size_y
 
+        # 入力の初期化
+        self._input_string = ''
+
         # Pyxel の初期化
-        pyxel.init(self._screen_size_x, self._screen_size_y, caption = 'Tiny Trek', scale = 2)
+        pyxel.init(self._screen_size_x, self._screen_size_y, title = 'Tiny Trek')
         pyxel.cls(self._color_back)
+        pyxel.image(0).cls(self._color_back)
+
+    # 実行する
+    def _execute(self):
+
+        # 実行の初期化
+        self._number = self._start
+        self._statement = 0
+        self._key = None
+        self._speed = 1000
+
+        # Pyxel の実行
+        pyxel.run(self._update, self._draw)
+
+    # 1 フレームの更新を行う
+    def _update(self):
+
+        # 1 回の更新
+        if self._key is None:
+            cycle = 0
+            while cycle < self._speed and self._key is None:
+                self._number, self._statement, self._key = self._process(self._number, self._statement)
+                cycle = cycle + 1
+            self._input_string = ''
+
+        # キー入力
+        if self._key is not None:
+
+            # キー入力の更新
+            if self._input():
+
+                # 値の取得
+                if self._input_string[0].isdecimal():
+                    value = self._int16(self._input_string)
+                elif self._input_string[0].isalpha():
+                    key = self._input_string[0].upper()
+                    if key not in self._variables:
+                        self._variables[key] = 0
+                    value = self._variables[key]
+
+                # 値の設定
+                self._variables[self._key] = value
+                self._number, self._statement = self._get_next_statement(self._number, self._statement)
+                self._key = None
+
+                # 改行
+                self._newline()
+
+        pyxel.blt(0, 0, 0, 0, 0, self._screen_size_x, self._screen_size_y)
+
+    # 1 フレームの描画を行う
+    def _draw(self):
+        pass
 
     # 文字列を出力する
     def _print(self, string):
@@ -50,22 +106,22 @@ class TinyTrek(TinyBasic):
     def _putc(self, c, flush = False):
 
         # １文字の出力
-        pyxel.text(self._cursor_x, self._cursor_y, c, self._color_text)
+        pyxel.image(0).text(self._cursor_x, self._cursor_y, c, self._color_text)
 
         # カーソルの更新
         self._cursor_x = self._cursor_x + self._font_size_x
         if self._cursor_x >= self._screen_size_x:
             self._newline()
-        elif flush:
-            pyxel.flip()
+        # elif flush:
+        #     pyxel.flip()
 
     # 改行する
     def _newline(self):
 
         # スクロール
-        pyxel.image(4, system = True).copy(0, 0, 4, 0, self._font_size_y, self._screen_size_x, self._screen_size_y - self._font_size_y)
-        pyxel.rect(0, self._screen_size_y - self._font_size_y, self._screen_size_x, self._font_size_y, self._color_back)
-        pyxel.flip()
+        pyxel.image(0).blt(0, 0, 0, 0, self._font_size_y, self._screen_size_x, self._screen_size_y - self._font_size_y)
+        pyxel.image(0).rect(0, self._screen_size_y - self._font_size_y, self._screen_size_x, self._font_size_y, self._color_back)
+        # pyxel.flip()
 
         # カーソルの更新
         self._cursor_x = 0
@@ -85,6 +141,16 @@ class TinyTrek(TinyBasic):
             pyxel.KEY_7: '7', 
             pyxel.KEY_8: '8', 
             pyxel.KEY_9: '9', 
+            pyxel.KEY_KP_0: '0', 
+            pyxel.KEY_KP_1: '1', 
+            pyxel.KEY_KP_2: '2', 
+            pyxel.KEY_KP_3: '3', 
+            pyxel.KEY_KP_4: '4', 
+            pyxel.KEY_KP_5: '5', 
+            pyxel.KEY_KP_6: '6', 
+            pyxel.KEY_KP_7: '7', 
+            pyxel.KEY_KP_8: '8', 
+            pyxel.KEY_KP_9: '9', 
         }
         alphabets = {
             pyxel.KEY_A: 'A', 
@@ -115,60 +181,39 @@ class TinyTrek(TinyBasic):
             pyxel.KEY_Z: 'Z'
         }
 
-        # 文字列の初期化
-        string = ''
-
         # ENTER が押されるまで
-        enter = True
-        while enter:
+        result = False
 
-            # ENTER の入力
-            if pyxel.btnp(pyxel.KEY_ENTER):
-                enter = False
+        # ENTER の入力
+        if pyxel.btnp(pyxel.KEY_RETURN) or pyxel.btnp(pyxel.KEY_KP_ENTER):
+            if len(self._input_string) > 0:
+                result = True
 
-            # BACKSPACE, DELETE の入力
-            elif pyxel.btnp(pyxel.KEY_BACKSPACE) or pyxel.btnp(pyxel.KEY_DELETE):
-                if len(string) > 0:
-                    string = string[:-1]
-                    self._cursor_x = self._cursor_x - self._font_size_x
-                    pyxel.rect(self._cursor_x, self._cursor_y, self._font_size_x, self._font_size_y, self._color_back)
+        # BACKSPACE, DELETE の入力
+        elif pyxel.btnp(pyxel.KEY_BACKSPACE) or pyxel.btnp(pyxel.KEY_DELETE):
+            if len(self._input_string) > 0:
+                self._input_string = self._input_string[:-1]
+                self._cursor_x = self._cursor_x - self._font_size_x
+                pyxel.image(0).rect(self._cursor_x, self._cursor_y, self._font_size_x, self._font_size_y, self._color_back)
 
-            # その他の入力
-            else:
+        # その他の入力
+        else:
 
-                # 数値の入力
-                for key in numbers:
-                    if pyxel.btnp(key):
-                        if len(string) < 3:
-                            c = numbers[key]
-                            string = string + c
-                            self._putc(c)
+            # 数値の入力
+            for key in numbers:
+                if pyxel.btnp(key):
+                    if len(self._input_string) < 8:
+                        c = numbers[key]
+                        self._input_string = self._input_string + c
+                        self._putc(c)
 
-                # アルファベットの入力
-                for key in alphabets:
-                    if pyxel.btnp(key):
-                        if len(string) == 0:
-                            c = alphabets[key]
-                            string = c
-                            self._putc(c)
-                            enter = False
-
-            # 画面の更新
-            pyxel.flip()
-
-        # 改行
-        self._newline()
-
-        # 文字列の確認
-        result = None
-        if len(string) > 0:
-            if string.isdecimal():
-                result = self._int16(string)
-            elif string[0].isalpha():
-                key = string[0].upper()
-                if key not in self._variables:
-                    self._variables[key] = 0
-                result = self._variables[key]
+            # アルファベットの入力
+            for key in alphabets:
+                if pyxel.btnp(key):
+                    if len(self._input_string) == 0:
+                        c = alphabets[key]
+                        self._input_string = c
+                        self._putc(c)
 
         # 終了
         return result

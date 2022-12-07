@@ -61,8 +61,8 @@ class TinyBasic(Transformer):
         if not self._parse():
             exit()
 
-        # プログラムの実行
-        if not self._execute():
+        # プログラムの処理
+        if not self._process():
             exit()
 
     # ファイルを読み込む
@@ -84,7 +84,7 @@ class TinyBasic(Transformer):
 
         # 例外
         except Exception as e:
-            sys.stderr.write(f'{e}\n')
+            sys.stderr.write('{0}\n'.format(e))
             return False
 
         # 読み込みの完了
@@ -207,17 +207,13 @@ class TinyBasic(Transformer):
                             count = count + 1
                             self._trees[number][count] = tree.children[0].children[1]
                             count = count + 1
-                        elif tree.children[0].data == 'command_input':
-                            for child in tree.children[0].children:
-                                self._trees[number][count] = Tree('statement', [Tree('command_input', [child])])
-                                count = count + 1
                         else:
                             self._trees[number][count] = tree
                             count = count + 1
 
         # 例外
         except Exception as e:
-            sys.stderr.write(f'{e}\n')
+            sys.stderr.write('{0}\n'.format(e))
             return False
 
         # 解析の完了
@@ -227,127 +223,96 @@ class TinyBasic(Transformer):
         # 終了
         return True
 
-    # コンパイルする
-    def _compile(self):
-        pass
-
-    # 実行する
-    def _execute(self):
-
-        # 実行の設定
-        number = self._start
-        statement = 0
-
-        # メインループ
-        while number > 0:
-            number, statement, key = self._process(number, statement)
-            if key is not None:
-                value = None
-                while value is None:
-                    string = input()
-                    if len(string) > 0:
-                        if string[0].isdecimal():
-                            value = self._int16(string)
-                        elif string[0].isalpha():
-                            key = string[0].upper()
-                            if key not in self._variables:
-                                self._variables[key] = 0
-                            value = self._variables[key]
-                    if value is None:
-                        self._newline()
-                self._variables[key] = value
-                self._newline()
-                number, statement = self._get_next_statement(number, statement)
-
-    # ステートメントを処理する
-    def _process(self, number, statement):
+    # プログラムを処理する
+    def _process(self):
 
         # Visitor の作成
-        result = None
-        self._log(f'{number}:{statement} >>>')
+        number = self._start
+        statement = 0
+        while number > 0:
+            result = 0
+            self._log("[{0}:{1}]".format(number, statement))
 
-        # ステートメントの実行
-        try:
-            result = self.transform(self._trees[number][statement])
+            # ステートメントの実行
+            try:
+                result = self.transform(self._trees[number][statement])
 
-        # 例外
-        except Exception as e:
-            sys.stderr.write('f{e}\n')
-            return 0, 0, None
+            # 例外
+            except Exception as e:
+                sys.stderr.write('{0}\n'.format(e))
+                return False
 
-        # 実行の完了
-        finally:
-            if result[0] == 'else':
-                if number in self._nexts:
-                    number = self._nexts[number]
+            # 実行の完了
+            finally:
+                if result[0] == 'else':
+                    if number in self._nexts:
+                        number = self._nexts[number]
+                        statement = 0
+                    else:
+                        number = 0
+                elif result[0] == 'goto':
+                    number = result[1]
                     statement = 0
-                else:
+                elif result[0] == 'gosub':
+                    number, statement = self._get_next_statement(number, statement)
+                    self._gosubs.append([number, statement])
+                    number = result[1]
+                    statement = 0
+                elif result[0] == 'return':
+                    params = self._gosubs.pop()
+                    number = params[0]
+                    statement = params[1]
+                elif result[0] == 'for':
+                    number, statement = self._get_next_statement(number, statement)
+                    self._fors.append([number, statement, result[1][0], result[1][1], result[1][2]])
+                elif result[0] == 'next':
+                    if result[1] is not None:
+                        number = result[1][0]
+                        statement = result[1][1]
+                    else:
+                        number, statement = self._get_next_statement(number, statement)
+                elif result[0] == 'stop':
                     number = 0
-            elif result[0] == 'goto':
-                number = result[1]
-                statement = 0
-            elif result[0] == 'gosub':
-                number, statement = self._get_next_statement(number, statement)
-                self._gosubs.append([number, statement])
-                number = result[1]
-                statement = 0
-            elif result[0] == 'return':
-                params = self._gosubs.pop()
-                number = params[0]
-                statement = params[1]
-            elif result[0] == 'for':
-                number, statement = self._get_next_statement(number, statement)
-                self._fors.append([number, statement, result[1], result[2], result[3]])
-            elif result[0] == 'next':
-                if result[1] is not None:
-                    number = result[1][0]
-                    statement = result[1][1]
                 else:
                     number, statement = self._get_next_statement(number, statement)
-            elif result[0] == 'stop':
-                number = 0
-            elif result[0] == 'input':
-                pass
-            else:
-                number, statement = self._get_next_statement(number, statement)
 
         # 終了
-        return number, statement, result[1] if result[0] == 'input' else None
+        return True
 
     # Transformer
 
     # statement
     def statement(self, tree):
-        self._log(f'statement: {tree}')
+        self._log('statement: ', tree)
         return tree[0]
 
     # command_let
     def command_let(self, tree):
-        self._log(f'command_let: {tree}')
+        self._log('command_let: ', tree)
         return [None, None]
 
     # let
     def let(self, tree):
-        self._log(f'let: {tree}')
-        if tree[0][0] == 'VARIABLE':
-            self._variables[tree[0][1]] = tree[1][1]
-        elif tree[0][0] == 'array':
-            self._array[tree[0][1][1]] = tree[1][1]
-        return tree[1][1]
+        self._log('let: ', tree)
+        if tree[0].type == 'VARIABLE':
+            self._variables[tree[0].value] = tree[1]
+        elif tree[0].type == 'array':
+            self._array[tree[0].value] = tree[1]
+        return tree[1]
 
     # command_print
     def command_print(self, tree):
-        self._log(f'command_print {tree}')
+        self._log('command_print', tree)
         digit = 6
         cr = True
         for element in tree:
-            if element[0] == 'STRING':
-                self._print(element[1])
-            elif element[0] == 'NUMBER':
-                self._print(f'{element[1]:{digit}d}')
-            elif element[0] == 'DIGIT':
-                digit = element[1]
-            elif element[0] == 'COMMA':
+            if type(element) is str:
+                self._print(element)
+            elif type(element) is int:
+                self._print(f'{element:{digit}d}')
+            elif element.type == 'DIGIT':
+                digit = element.value
+            elif element.type == 'COMMA':
                 cr = False
             else:
                 pass
@@ -357,47 +322,54 @@ class TinyBasic(Transformer):
 
     # command_input
     def command_input(self, tree):
-        self._log(f'command_input {tree}')
-        prompt = tree[0]
-        if len(prompt) > 1:
-            for i in range(len(prompt) - 1):
-                self._print(prompt[i][1])
-        else:
-            self._print(prompt[0][1])
-        self._print(':')
-        return ['input', prompt[len(prompt) - 1][1]]
+        self._log('command_input', tree)
+        for prompt in tree:
+            value = None
+            while value is None:
+                if len(prompt) > 1:
+                    for i in range(len(prompt) - 1):
+                        self._print(prompt[i])
+                else:
+                    self._print(prompt[0].value)
+                self._print(':')
+                value = self._input()
+                if value is None:
+                    self._newline
+            self._variables[prompt[len(prompt) - 1].value] = value
+            self._newline
+        return [None, None]
 
     # command_if
     def command_if(self, tree):
-        self._log(f'command_if {tree}')
-        return [None, None] if tree[0][1] != 0 else ['else', None]
+        self._log('command_if', tree)
+        return [None, None] if tree[0] != 0 else ['else', None]
     
     # command_goto
     def command_goto(self, tree):
-        self._log(f'command_goto {tree}')
-        return ['goto', tree[0][1]]
+        self._log('command_goto', tree)
+        return ['goto', tree[0]]
     
     # command_gosub
     def command_gosub(self, tree):
-        self._log(f'command_gosub {tree}')
-        return ['gosub', tree[0][1]]
+        self._log('command_gosub', tree)
+        return ['gosub', tree[0]]
     
     # command_return
     def command_return(self, tree):
-        self._log(f'command_return {tree}')
+        self._log('command_return', tree)
         return ['return', None]
     
     # command_for
     def command_for(self, tree):
-        self._log(f'command_for {tree}')
-        self._variables[tree[0][1]] = tree[1][1]
-        return ['for', tree[0][1], tree[2][1], tree[3][1] if len(tree) >= 4 else 1]
+        self._log('command_for', tree)
+        self._variables[tree[0].value] = tree[1]
+        return ['for', [tree[0].value, tree[2], tree[3] if len(tree) >= 4 else 1]]
     
     # command_next
     def command_next(self, tree):
-        self._log(f'command_next {tree}')
+        self._log('command_next', tree)
         i = len(self._fors) - 1
-        while i >= 0 and self._fors[i][2] != tree[0][1]:
+        while i >= 0 and self._fors[i][2] != tree[0].value:
             self._fors.pop()
             i = i - 1
         result = None
@@ -410,141 +382,141 @@ class TinyBasic(Transformer):
     
     # command_stop
     def command_stop(self, tree):
-        self._log(f'command_stop: {tree}')
-        return ['stop', 0]
+        self._log('command_stop: ', tree)
+        return ['stop', None]
 
     # function_abs
     def function_abs(self, tree):
-        self._log(f'function_abs: {tree}')
-        return ['NUMBER', abs(tree[0][1])]
+        self._log('function_abs: ', tree)
+        return abs(tree[0])
 
     # function_rnd
     def function_rnd(self, tree):
-        self._log(f'function_rnd: {tree}')
-        return ['NUMBER', random.randint(1, tree[0][1])]
+        self._log('function_rnd: ', tree)
+        return random.randint(1, tree[0])
 
     # prompt
     def prompt(self, tree):
-        self._log(f'prompt: {tree}')
+        self._log('prompt: ', tree)
         return tree
 
     # expression
     def expression(self, tree):
-        self._log(f'expression: {tree}')
+        self._log('expression: ', tree)
         return tree[0]
 
     # greater
     def greater(self, tree):
-        self._log(f'greater: {tree}')
-        return ['NUMBER', 1 if tree[0] > tree[1] else 0]
+        self._log('greater: ', tree)
+        return 1 if tree[0] > tree[1] else 0
         
     # greater_equal
     def greater_equal(self, tree):
-        self._log(f'greater: {tree}')
-        return ['NUMBER', 1 if tree[0] >= tree[1] else 0]
+        self._log('greater: ', tree)
+        return 1 if tree[0] >= tree[1] else 0
         
     # less
     def less(self, tree):
-        self._log(f'less: {tree}')
-        return ['NUMBER', 1 if tree[0] < tree[1] else 0]
+        self._log('less: ', tree)
+        return 1 if tree[0] < tree[1] else 0
         
     # less_equal
     def less_equal(self, tree):
-        self._log(f'less_equal: {tree}')
-        return ['NUMBER', 1 if tree[0] <= tree[1] else 0]
+        self._log('less_equal: ', tree)
+        return 1 if tree[0] <= tree[1] else 0
         
     # equal
     def equal(self, tree):
-        self._log(f'equal: {tree}')
-        return ['NUMBER', 1 if tree[0] == tree[1] else 0]
+        self._log('equal: ', tree)
+        return 1 if tree[0] == tree[1] else 0
         
     # not_equal
     def not_equal(self, tree):
-        self._log(f'not_equal: {tree}')
-        return ['NUMBER', 1 if tree[0] != tree[1] else 0]
+        self._log('not_equal: ', tree)
+        return 1 if tree[0] != tree[1] else 0
         
     # sum
     def sum(self, tree):
-        self._log(f'sum: {tree}')
+        self._log('sum: ', tree)
         return tree[0]
 
     # addition
     def addition(self, tree):
-        self._log(f'addition: {tree}')
-        return ['NUMBER', self._int16(tree[0][1] + tree[1][1])]
+        self._log('addition: ', tree)
+        return self._int16(tree[0] + tree[1])
 
     # subtraction
     def subtraction(self, tree):
-        self._log(f'subtraction: {tree}')
-        return ['NUMBER', self._int16(tree[0][1] - tree[1][1])]
+        self._log('subtraction: ', tree)
+        return self._int16(tree[0] - tree[1])
 
     # product
     def product(self, tree):
-        self._log(f'product: {tree}')
+        self._log('product: ', tree)
         return tree[0]
 
     # multiply
     def multiply(self, tree):
-        self._log(f'multiply: {tree}')
-        return ['NUMBER', self._int16(tree[0][1] * tree[1][1])]
+        self._log('multiply: ', tree)
+        return self._int16(tree[0] * tree[1])
 
     # division
     def division(self, tree):
-        self._log(f'division: {tree}')
-        return ['NUMBER', self._int16(tree[0][1] / tree[1][1])]
+        self._log('division: ', tree)
+        return self._int16(tree[0] / tree[1])
 
     # atom
     def atom(self, tree):
-        self._log(f'atom: {tree}')
+        self._log('atom: ', tree)
         return tree[0]
 
     # positive
     def positive(self, tree):
-        self._log(f'positive: {tree}')
-        # return ['NUMBER', self._int16(tree[0][1])]
-        return tree[0]
+        self._log('positive: ', tree)
+        return self._int16(tree[0])
 
     # negative
     def negative(self, tree):
-        self._log(f'negative: {tree}')
-        return ['NUMBER', self._int16(-tree[0][1])]
+        self._log('negative: ', tree)
+        return self._int16(-tree[0])
 
     # factor
     def factor(self, tree):
-        self._log(f'factor: {tree}')
+        self._log('factor: ', tree)
         result = 0
-        if tree[0][0] == 'NUMBER':
-            result = tree[0][1]
-        elif tree[0][0] == 'VARIABLE':
-            key = tree[0][1]
+        if type(tree[0]) is int:
+            result = tree[0]
+        elif tree[0].type == 'VARIABLE':
+            key = tree[0].value
             if key not in self._variables:
                 self._variables[key] = 0
             result = self._variables[key]
-        elif tree[0][0] == 'array':
-            key = tree[0][1][1]
+        elif tree[0].type == 'array':
+            key = tree[0].value
             if key not in self._array:
                 self._array[key] = 0
             result = self._array[key]
-        return ['NUMBER', result]
+        return result
 
     # VARIABLE
     def VARIABLE(self, tree):
-        self._log(f'VARIABLE: {tree}')
-        return ['VARIABLE', tree[0].upper()]
+        self._log('VARIABLE: ', tree)
+        tree.value = tree[0].upper()
+        return tree
 
     # array
     def array(self, tree):
-        self._log(f'array: {tree}')
-        return ['array', tree[0]]
+        self._log('array: ', tree)
+        return Token('array', tree[0])
 
     # NUMBER
     def NUMBER(self, tree):
-        self._log(f'NUMBER: {tree}')
-        return ['NUMBER', self._int16(tree.value)]
+        self._log('NUMBER: ', tree)
+        return self._int16(tree.value)
 
     # STRING
     def STRING(self, tree):
-        self._log(f'STRING: {tree}')
+        self._log('STRING: ', tree)
         tail = len(tree.value) - 1
         if tree.value[0] == "\"":
             if tree.value[tail] == "\"":
@@ -552,17 +524,17 @@ class TinyBasic(Transformer):
         elif tree.value[0] == "'":
             if tree.value[tail] == "'":
                 tail = tail - 1
-        return ['STRING', tree.value[1:tail + 1]]
+        return tree.value[1:tail + 1]
 
     # DIGIT
     def DIGIT(self, tree):
-        self._log(f'DIGIT: {tree}')
-        return ['DIGIT', self._int16(tree.value[1:])]
+        self._log('DIGIT:', tree)
+        return Token('DIGIT', self._int16(tree.value[1:]))
 
     # COMMA
     def COMMA(self, tree):
-        self._log(f'COMMA: {tree}')
-        return ['COMMA', 0]
+        self._log('COMMA', tree)
+        return Token('COMMA', tree.value)
 
     # 16bits 整数を取得する
     def _int16(self, value):
@@ -590,6 +562,20 @@ class TinyBasic(Transformer):
     # 改行する
     def _newline(self):
         print('')
+
+    # キー入力を受け付ける
+    def _input(self):
+        result = None
+        string = input()
+        if len(string) > 0:
+            if string.isdecimal():
+                result = self._int16(string)
+            elif string[0].isalpha():
+                key = string[0].upper()
+                if key not in self._variables:
+                    self._variables[key] = 0
+                result = self._variables[key]
+        return result
 
     # ログを出力する
     def _log(self, *args):
